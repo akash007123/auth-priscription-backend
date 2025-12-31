@@ -1,0 +1,254 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const multer = require('multer');
+const jwt = require('jsonwebtoken');
+const Prescription = require('./models/Prescription');
+const User = require('./models/User');
+const auth = require('./middleware/auth');
+
+const app = express();
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// Enable CORS for all origins
+app.use(cors());
+
+// Parse JSON bodies
+app.use(express.json());
+
+// Serve static files from uploads
+app.use('/uploads', express.static('uploads'));
+
+// Multer configuration
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+const upload = multer({ storage });
+
+// Routes
+
+// Auth routes
+
+// POST /api/auth/signup
+app.post('/api/auth/signup', upload.fields([{ name: 'profilePic', maxCount: 1 }, { name: 'logoPic', maxCount: 1 }]), async (req, res) => {
+  try {
+    const { role, email, mobile, password, name, address, clinicHospitalName, qualification, registrationNo } = req.body;
+
+    if (!role || !email || !mobile || !password) {
+      return res.status(400).json({ error: 'Role, email, mobile, and password are required' });
+    }
+
+    if (!['Admin', 'Doctor'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    if (!req.files.profilePic) {
+      return res.status(400).json({ error: 'Profile picture is required' });
+    }
+
+    const profilePic = req.files.profilePic[0].path;
+
+    let logoPic = null;
+    if (role === 'Doctor') {
+      if (!req.files.logoPic) {
+        return res.status(400).json({ error: 'Logo picture is required for doctors' });
+      }
+      logoPic = req.files.logoPic[0].path;
+
+      if (!name || !address || !clinicHospitalName || !qualification || !registrationNo) {
+        return res.status(400).json({ error: 'All doctor fields are required' });
+      }
+    }
+
+    const user = new User({
+      role,
+      email,
+      mobile,
+      password,
+      name: role === 'Doctor' ? name : undefined,
+      address: role === 'Doctor' ? address : undefined,
+      clinicHospitalName: role === 'Doctor' ? clinicHospitalName : undefined,
+      qualification: role === 'Doctor' ? qualification : undefined,
+      registrationNo: role === 'Doctor' ? registrationNo : undefined,
+      profilePic,
+      logoPic
+    });
+
+    await user.save();
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(201).json({ user: { id: user._id, role: user.role, email: user.email, name: user.name }, token });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// POST /api/auth/login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ user: { id: user._id, role: user.role, email: user.email, name: user.name }, token });
+  } catch (error) {
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// GET /api/auth/me - Get current user
+app.get('/api/auth/me', auth, async (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const userData = {
+    id: req.user._id,
+    role: req.user.role,
+    email: req.user.email,
+    name: req.user.name,
+    profilePic: req.user.profilePic ? `${baseUrl}/${req.user.profilePic}` : null,
+    logoPic: req.user.logoPic ? `${baseUrl}/${req.user.logoPic}` : null
+  };
+  if (req.user.role === 'Doctor') {
+    userData.clinicHospitalName = req.user.clinicHospitalName;
+    userData.qualification = req.user.qualification;
+    userData.registrationNo = req.user.registrationNo;
+    userData.address = req.user.address;
+    userData.mobile = req.user.mobile;
+  }
+  res.json({ user: userData });
+});
+
+// Prescription routes
+
+// GET /api/prescriptions - Get all prescriptions with optional filters
+app.get('/api/prescriptions', auth, async (req, res) => {
+  try {
+    const { search, fromDate, toDate } = req.query;
+    let query = {};
+
+    if (req.user.role === 'Doctor') {
+      query.doctorId = req.user._id;
+    }
+
+    if (search) {
+      query['patientData.name'] = { $regex: search, $options: 'i' };
+    }
+
+    if (fromDate || toDate) {
+      query['patientData.date'] = {};
+      if (fromDate) {
+        query['patientData.date'].$gte = fromDate;
+      }
+      if (toDate) {
+        query['patientData.date'].$lte = toDate;
+      }
+    }
+
+    const prescriptions = await Prescription.find(query).populate('doctorId', 'name clinicHospitalName qualification registrationNo address mobile logoPic');
+    res.json(prescriptions);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch prescriptions' });
+  }
+});
+
+// GET /api/prescriptions/:id - Get a single prescription
+app.get('/api/prescriptions/:id', auth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findById(req.params.id).populate('doctorId', 'name clinicHospitalName qualification registrationNo address mobile logoPic');
+    if (!prescription) {
+      return res.status(404).json({ error: 'Prescription not found' });
+    }
+    if (req.user.role === 'Doctor' && prescription.doctorId._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(prescription);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch prescription' });
+  }
+});
+
+// POST /api/prescriptions - Create a new prescription
+app.post('/api/prescriptions', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'Doctor') {
+      return res.status(403).json({ error: 'Only doctors can create prescriptions' });
+    }
+    const { patientData, medicines, note } = req.body;
+    if (!patientData || !medicines) {
+      return res.status(400).json({ error: 'Patient data and medicines are required' });
+    }
+    const newPrescription = new Prescription({ doctorId: req.user._id, patientData, medicines, note: note || '' });
+    await newPrescription.save();
+    res.status(201).json(newPrescription);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create prescription' });
+  }
+});
+
+// PUT /api/prescriptions/:id - Update a prescription
+app.put('/api/prescriptions/:id', auth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findById(req.params.id);
+    if (!prescription) {
+      return res.status(404).json({ error: 'Prescription not found' });
+    }
+    if (req.user.role === 'Doctor' && prescription.doctorId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const { patientData, medicines, note } = req.body;
+    if (!patientData || !medicines) {
+      return res.status(400).json({ error: 'Patient data and medicines are required' });
+    }
+    const updatedPrescription = await Prescription.findByIdAndUpdate(
+      req.params.id,
+      { patientData, medicines, note: note || '' },
+      { new: true }
+    );
+    res.json(updatedPrescription);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update prescription' });
+  }
+});
+
+// DELETE /api/prescriptions/:id - Delete a prescription
+app.delete('/api/prescriptions/:id', auth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findById(req.params.id);
+    if (!prescription) {
+      return res.status(404).json({ error: 'Prescription not found' });
+    }
+    if (req.user.role === 'Doctor' && prescription.doctorId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await Prescription.findByIdAndDelete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete prescription' });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
