@@ -333,6 +333,43 @@ app.delete('/api/prescriptions/:id', auth, async (req, res) => {
   }
 });
 
+// Admin routes
+
+// GET /api/admin/users - Get all users for admin
+app.get('/api/admin/users', auth, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Access denied. Admin role required.' });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    
+    // Transform the data to include full URLs for images
+    const formattedUsers = users.map(user => ({
+      id: user._id,
+      role: user.role,
+      email: user.email,
+      name: user.name || 'N/A',
+      mobile: user.mobile,
+      address: user.address || 'N/A',
+      clinicHospitalName: user.clinicHospitalName || 'N/A',
+      qualification: user.qualification || 'N/A',
+      registrationNo: user.registrationNo || 'N/A',
+      profilePic: user.profilePic ? `${baseUrl}/${user.profilePic}` : null,
+      logoPic: user.logoPic ? `${baseUrl}/${user.logoPic}` : null,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    }));
+    
+    res.json(formattedUsers);
+  } catch (error) {
+    console.error('Admin users fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
