@@ -335,7 +335,7 @@ app.delete('/api/prescriptions/:id', auth, async (req, res) => {
 
 // Admin routes
 
-// GET /api/admin/users - Get all users for admin
+// GET /api/admin/users - Get all users for admin with pagination and filters
 app.get('/api/admin/users', auth, async (req, res) => {
   try {
     // Check if user is admin
@@ -343,9 +343,39 @@ app.get('/api/admin/users', auth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admin role required.' });
     }
 
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const { search, role, status } = req.query;
+
     const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
-    
+
+    // Build query for filters
+    let query = {};
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { mobile: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (role && role !== 'All') {
+      query.role = role;
+    }
+    if (status && status !== 'All') {
+      query.status = status;
+    }
+
+    // Get total count for pagination (with filters applied)
+    const totalUsers = await User.countDocuments(query);
+
+    // Get paginated users with filters
+    const users = await User.find(query)
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
     // Transform the data to include full URLs for images
     const formattedUsers = users.map(user => ({
       id: user._id,
@@ -363,8 +393,19 @@ app.get('/api/admin/users', auth, async (req, res) => {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt
     }));
-    
-    res.json(formattedUsers);
+
+    const totalPages = Math.ceil(totalUsers / limit);
+
+    res.json({
+      users: formattedUsers,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalUsers,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
   } catch (error) {
     console.error('Admin users fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
