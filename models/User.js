@@ -49,6 +49,11 @@ const userSchema = new mongoose.Schema({
   logoPic: {
     type: String, // file path or URL
     required: function() { return this.role === 'Doctor'; }
+  },
+  status: {
+    type: String,
+    enum: ['Active', 'Inactive'],
+    default: 'Active'
   }
 }, { timestamps: true });
 

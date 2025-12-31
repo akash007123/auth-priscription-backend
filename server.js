@@ -359,6 +359,7 @@ app.get('/api/admin/users', auth, async (req, res) => {
       registrationNo: user.registrationNo || 'N/A',
       profilePic: user.profilePic ? `${baseUrl}/${user.profilePic}` : null,
       logoPic: user.logoPic ? `${baseUrl}/${user.logoPic}` : null,
+      status: user.status,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt
     }));
@@ -367,6 +368,78 @@ app.get('/api/admin/users', auth, async (req, res) => {
   } catch (error) {
     console.error('Admin users fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// PUT /api/admin/users/:id - Update a user
+app.put('/api/admin/users/:id', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Access denied. Admin role required.' });
+    }
+
+    const { name, email, mobile, role, status } = req.body;
+
+    // Check if email is already taken by another user
+    if (email) {
+      const existingUser = await User.findOne({ email: email.toLowerCase(), _id: { $ne: req.params.id } });
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email already exists' });
+      }
+    }
+
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email.toLowerCase();
+    if (mobile !== undefined) updateData.mobile = mobile;
+    if (role !== undefined) updateData.role = role;
+    if (status !== undefined) updateData.status = status;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const userData = {
+      id: updatedUser._id,
+      role: updatedUser.role,
+      email: updatedUser.email,
+      name: updatedUser.name || 'N/A',
+      mobile: updatedUser.mobile,
+      profilePic: updatedUser.profilePic ? `${baseUrl}/${updatedUser.profilePic}` : null,
+      status: updatedUser.status
+    };
+
+    res.json(userData);
+  } catch (error) {
+    console.error('Admin user update error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user
+app.delete('/api/admin/users/:id', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Access denied. Admin role required.' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error('Admin user delete error:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 
