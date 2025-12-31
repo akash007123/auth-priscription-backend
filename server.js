@@ -139,6 +139,91 @@ app.get('/api/auth/me', auth, async (req, res) => {
   res.json({ user: userData });
 });
 
+// GET /api/auth/profile - Get current user profile (same as /me)
+app.get('/api/auth/profile', auth, async (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const userData = {
+    id: req.user._id,
+    role: req.user.role,
+    email: req.user.email,
+    name: req.user.name,
+    profilePic: req.user.profilePic ? `${baseUrl}/${req.user.profilePic}` : null,
+    logoPic: req.user.logoPic ? `${baseUrl}/${req.user.logoPic}` : null
+  };
+  if (req.user.role === 'Doctor') {
+    userData.clinicHospitalName = req.user.clinicHospitalName;
+    userData.qualification = req.user.qualification;
+    userData.registrationNo = req.user.registrationNo;
+    userData.address = req.user.address;
+    userData.mobile = req.user.mobile;
+  }
+  res.json({ user: userData });
+});
+
+// PUT /api/auth/profile - Update user profile
+app.put('/api/auth/profile', auth, upload.fields([{ name: 'profilePic', maxCount: 1 }, { name: 'logoPic', maxCount: 1 }]), async (req, res) => {
+  try {
+    const { name, email, mobile, address, clinicHospitalName, qualification, registrationNo, specialty } = req.body;
+    
+    // Check if email is already taken by another user
+    if (email && email !== req.user.email) {
+      const existingUser = await User.findOne({ email: email.toLowerCase(), _id: { $ne: req.user._id } });
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email already exists' });
+      }
+    }
+
+    // Prepare update data
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email.toLowerCase();
+    if (mobile !== undefined) updateData.mobile = mobile;
+    if (address !== undefined) updateData.address = address;
+    if (clinicHospitalName !== undefined) updateData.clinicHospitalName = clinicHospitalName;
+    if (qualification !== undefined) updateData.qualification = qualification;
+    if (registrationNo !== undefined) updateData.registrationNo = registrationNo;
+    if (specialty !== undefined) updateData.specialty = specialty;
+
+    // Handle file uploads
+    if (req.files.profilePic) {
+      updateData.profilePic = req.files.profilePic[0].path;
+    }
+    
+    if (req.files.logoPic) {
+      updateData.logoPic = req.files.logoPic[0].path;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const userData = {
+      id: updatedUser._id,
+      role: updatedUser.role,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      profilePic: updatedUser.profilePic ? `${baseUrl}/${updatedUser.profilePic}` : null,
+      logoPic: updatedUser.logoPic ? `${baseUrl}/${updatedUser.logoPic}` : null
+    };
+    
+    if (updatedUser.role === 'Doctor') {
+      userData.clinicHospitalName = updatedUser.clinicHospitalName;
+      userData.qualification = updatedUser.qualification;
+      userData.registrationNo = updatedUser.registrationNo;
+      userData.address = updatedUser.address;
+      userData.mobile = updatedUser.mobile;
+    }
+
+    res.json({ user: userData });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 // Prescription routes
 
 // GET /api/prescriptions - Get all prescriptions with optional filters
