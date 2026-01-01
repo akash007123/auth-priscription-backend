@@ -516,7 +516,7 @@ app.put('/api/admin/users/:id', auth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admin role required.' });
     }
 
-    const { name, email, mobile, role, status } = req.body;
+    const { name, email, mobile, role, status, password, address, clinicHospitalName, qualification, registrationNo, specialty } = req.body;
 
     // Check if email is already taken by another user
     if (email) {
@@ -532,6 +532,15 @@ app.put('/api/admin/users/:id', auth, async (req, res) => {
     if (mobile !== undefined) updateData.mobile = mobile;
     if (role !== undefined) updateData.role = role;
     if (status !== undefined) updateData.status = status;
+    if (password !== undefined && password.trim() !== '') {
+      // Only update password if provided and not empty
+      updateData.password = password;
+    }
+    if (address !== undefined) updateData.address = address;
+    if (clinicHospitalName !== undefined) updateData.clinicHospitalName = clinicHospitalName;
+    if (qualification !== undefined) updateData.qualification = qualification;
+    if (registrationNo !== undefined) updateData.registrationNo = registrationNo;
+    if (specialty !== undefined) updateData.specialty = specialty;
 
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
@@ -550,7 +559,12 @@ app.put('/api/admin/users/:id', auth, async (req, res) => {
       email: updatedUser.email,
       name: updatedUser.name || 'N/A',
       mobile: updatedUser.mobile,
+      address: updatedUser.address || 'N/A',
+      clinicHospitalName: updatedUser.clinicHospitalName || 'N/A',
+      qualification: updatedUser.qualification || 'N/A',
+      registrationNo: updatedUser.registrationNo || 'N/A',
       profilePic: updatedUser.profilePic ? `${baseUrl}/${updatedUser.profilePic}` : null,
+      logoPic: updatedUser.logoPic ? `${baseUrl}/${updatedUser.logoPic}` : null,
       status: updatedUser.status
     };
 
