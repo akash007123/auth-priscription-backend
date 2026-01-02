@@ -75,7 +75,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     // Send email
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.GMAIL_USER,
       to: user.email,
       subject: 'Password Reset Request - PrescriptionMaker',
       html: `
@@ -182,6 +182,50 @@ app.post('/api/auth/signup', upload.fields([{ name: 'profilePic', maxCount: 1 },
     });
 
     await user.save();
+
+    // Send welcome email
+
+    try {
+
+      const mailOptions = {
+
+        from: process.env.GMAIL_USER,
+
+        to: user.email,
+
+        subject: 'Welcome to PrescriptionMaker!',
+
+        html: `
+
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+
+            <h2 style="color: #4F46E5;">Welcome to PrescriptionMaker, ${user.name || 'Doctor'}!</h2>
+
+            <p>Thank you for joining our platform. Your account has been successfully created.</p>
+
+            <p>You can now log in and start creating prescriptions efficiently.</p>
+
+            <p>If you have any questions, feel free to contact our support team.</p>
+
+            <p>Contact us:<br>Mobile: +91-9685533878<br>Email: akashraikwar763@gmail.com</p>
+
+            <p>Best regards,<br>PrescriptionMaker Team</p>
+
+          </div>
+
+        `
+
+      };
+
+      await transporter.sendMail(mailOptions);
+
+    } catch (emailError) {
+
+      console.error('Welcome email failed:', emailError);
+
+      // Don't fail the signup if email fails
+
+    }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
