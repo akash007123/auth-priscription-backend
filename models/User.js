@@ -42,6 +42,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: function() { return this.role === 'Doctor'; }
   },
+  specialty: {
+    type: String,
+    required: false // Optional field for doctors
+  },
   profilePic: {
     type: String, // file path or URL
     required: true

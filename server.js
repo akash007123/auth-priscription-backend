@@ -276,6 +276,7 @@ app.get('/api/auth/me', auth, async (req, res) => {
     userData.registrationNo = req.user.registrationNo;
     userData.address = req.user.address;
     userData.mobile = req.user.mobile;
+    userData.specialty = req.user.specialty;
   }
   res.json({ user: userData });
 });
@@ -297,6 +298,7 @@ app.get('/api/auth/profile', auth, async (req, res) => {
     userData.registrationNo = req.user.registrationNo;
     userData.address = req.user.address;
     userData.mobile = req.user.mobile;
+    userData.specialty = req.user.specialty;
   }
   res.json({ user: userData });
 });
@@ -356,6 +358,7 @@ app.put('/api/auth/profile', auth, upload.fields([{ name: 'profilePic', maxCount
       userData.registrationNo = updatedUser.registrationNo;
       userData.address = updatedUser.address;
       userData.mobile = updatedUser.mobile;
+      userData.specialty = updatedUser.specialty;
     }
 
     res.json({ user: userData });
